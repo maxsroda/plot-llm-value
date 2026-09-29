@@ -73,6 +73,13 @@ def _number(value, digits):
     return "n/a" if value is None else f"{value:.{digits}f}"
 
 
+def _usd(value):
+    """Cents for normal costs; two significant figures below 0.1 USD, so none reads 0.00."""
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}" if value >= 0.1 or value == 0 else f"{value:.2g}"
+
+
 def _cell(rows, value, fmt, bold_first):
     parts = [fmt(value(row)) for row in rows]
     if bold_first:
@@ -100,7 +107,7 @@ def _table_row(spec, catalog, row):
         ("★ " if key else "") + row["use"],
         " · ".join(names),
         _cell(members, _int, lambda v: _number(v, 1), key),
-        _cell(members, lambda r: r["cost_per_task_usd"], lambda v: _number(v, 2), key),
+        _cell(members, lambda r: r["cost_per_task_usd"], _usd, key),
         time,
     ]
     for cell in cells:
@@ -116,7 +123,7 @@ def _skip_line(catalog, item):
     else:
         label = " / ".join(_short(m) for m in members)
     ints = " / ".join(_number(_int(m), 1) for m in members)
-    costs = " / ".join(_number(m["cost_per_task_usd"], 2) for m in members)
+    costs = " / ".join(_usd(m["cost_per_task_usd"]) for m in members)
     times = " / ".join(_seconds(m["e2e_seconds"]) for m in members)
     why = item["why"].replace("$", "USD ")
     return f"- {label}: Int {ints}, {costs} USD, {times} — {why}"

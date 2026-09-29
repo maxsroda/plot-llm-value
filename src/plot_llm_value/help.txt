@@ -85,7 +85,8 @@ COMMANDS
                         the reason.
         caveats         Optional extra caveat lines, after the two standard ones.
       The table always reports the Intelligence Index as Int, cost per task in
-      USD and median end-to-end time, from the same snapshot as the plots.
+      USD (two decimals; two significant figures below 0.1) and median
+      end-to-end time, from the same snapshot as the plots.
       Rows are sorted by the first variant's Int. A key row gets a leading star
       and bolds its first variant. Time gets a lightning mark under 10 s and a
       tortoise at 100 s or more. Model names read '<family without Claude>
