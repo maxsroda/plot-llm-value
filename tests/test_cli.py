@@ -213,3 +213,39 @@ def test_x_e2e_plot_labels_the_axis_in_seconds(live_api, capsys):
 
 def test_x_is_rejected_for_models(live_api):
     assert main(["models", "--x", "e2e"]) == 2
+
+
+def _spec(tmp_path, **overrides):
+    spec = {
+        "name": "value",
+        "models": ["Alpha", "Beta"],
+        "plots": ["cost", "e2e"],
+        "dots": {"Alpha": "🟣"},
+        "rows": [
+            {"use": "Top", "key": True, "variants": ["Beta (max with fallback)"]},
+            {"use": "Cheap", "variants": ["Alpha (low)", "Alpha (medium)"]},
+        ],
+        "skip": [{"variants": ["Alpha (high)"], "why": "costs $2."}],
+        **overrides,
+    }
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec))
+    return path
+
+
+def test_report_writes_plots_and_table_sorted_by_int(live_api, capsys, tmp_path):
+    assert main(["report", str(_spec(tmp_path)), "--out-dir", str(tmp_path)]) == 0
+    written = json.loads(capsys.readouterr().out)["written"]
+    assert [Path(p).name for p in written] == ["value.png", "value-e2e.png", "value.md"]
+    table = (tmp_path / "value.md").read_text()
+    rows = [line for line in table.splitlines() if line.startswith("| ") and "---" not in line]
+    assert rows[1].startswith("| Cheap | Alpha low 🟣 · Alpha medium 🟣 | 35.0 · 42.0 |")
+    assert rows[2].startswith("| ★ Top | **Beta max** | **48.0** | **3.00** | ⚡ **5.0 s** |")
+    assert "$" not in table and "costs USD 2." in table
+    assert len(live_api) == 1
+
+
+def test_report_refuses_unknown_keys_and_dollar_cells(live_api, tmp_path):
+    assert main(["report", str(_spec(tmp_path, colour=1)), "--out-dir", str(tmp_path)]) == 2
+    bad = _spec(tmp_path, rows=[{"use": "$1 tier", "variants": ["Alpha (low)"]}])
+    assert main(["report", str(bad), "--out-dir", str(tmp_path)]) == 2

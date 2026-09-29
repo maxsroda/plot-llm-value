@@ -21,7 +21,10 @@ INSTRUCTIONS
   4. Use data for LLM-readable JSON without rendering an image. Inspect excluded
      rows before drawing conclusions. Lower cost and higher score are better;
      these benchmark results do not predict every user's workload.
-  5. On failure read stderr; correct selectors or credentials. For HTTP 429,
+  5. For a standing set of plots plus a which-model table, keep the choices in
+     a report spec and run report; rerun it to refresh every value at once.
+     Use data first to see which variants are dominated before editing rows.
+  6. On failure read stderr; correct selectors or credentials. For HTTP 429,
      wait the reported Retry-After interval. No stale data or web-scrape fallback.
 
 SYNOPSIS
@@ -30,6 +33,7 @@ SYNOPSIS
                  [--no-pareto] [--no-capability-lines] [--output PATH]
   plot-llm-value data [SELECTION] [--series ...] [--metric METRIC] [--x AXIS]
                       [--reasoning-only]
+  plot-llm-value report SPEC.json --out-dir DIR
   plot-llm-value models [SELECTION] [--series ...] [--reasoning-only]
   plot-llm-value help | --help | -h
 
@@ -60,6 +64,35 @@ COMMANDS
       measured costs; a measured zero cost is never treated as a guess.
       Only a missing score removes a row; those are excluded and reported.
       Fails if no row has a measured cost, since the x-axis would be empty.
+  report SPEC.json --out-dir DIR
+      One fetch renders every plot the spec names and a which-model Markdown
+      table, into DIR (which must exist; files there are overwritten).
+      Writes <name>.png (cost), <name>-<axis>.png for each other axis, and
+      <name>.md. Stdout: JSON with source and the written paths.
+      SPEC is a JSON object with these keys (unknown keys are refused):
+        name            Output file stem, e.g. "llm-value". Required.
+        models          Release families to plot (as --model). Required.
+        series          Optional list of [LABEL, VARIANT, VARIANT, ...] (as --series).
+        reasoning_only  Default true (as --reasoning-only).
+        plots           Axes to plot, from --x's choices. Default ["cost"].
+        dots            Optional {family: emoji} shown after each model name.
+        rows            Table rows. Required. Each is {"use": text, "variants":
+                        [VARIANT, ...], "key": bool}. Variants resolve as --variant
+                        does and need not be plotted; several in one row are
+                        joined with ' · '.
+        skip            Optional [{"variants": [...], "why": text}] for a
+                        'Skip:' list; values are printed, so 'why' holds only
+                        the reason.
+        caveats         Optional extra caveat lines, after the two standard ones.
+      The table always reports the Intelligence Index as Int, cost per task in
+      USD and median end-to-end time, from the same snapshot as the plots.
+      Rows are sorted by the first variant's Int. A key row gets a leading star
+      and bolds its first variant. Time gets a lightning mark under 10 s and a
+      tortoise at 100 s or more. Model names read '<family without Claude>
+      <effort>'. The tool never writes '$', '<' or '|' into a cell: renderers
+      treat '$...$' as maths and strip HTML, so a spec text containing them is
+      refused (in cells) or has '$' rewritten as 'USD ' (in skip and caveats).
+      Exit 2 for a bad spec or unknown variant; 1 for network or file errors.
   data
       Same live selection as plot; stdout: JSON with metadata, normalized rows,
       all three indices, cost, selected score, exclusion reasons and Pareto
@@ -144,6 +177,7 @@ EXAMPLES
   plot-llm-value --provider anthropic openai --reasoning-only
   plot-llm-value --env-file .env --provider openai
   plot-llm-value --provider anthropic --x e2e --output e2e.png
+  plot-llm-value report spec.json --out-dir ~/Pictures
   plot-llm-value --model 'Claude Opus 5.5' --series z.ai 'GLM-5.2 (max)' 'GLM-5.3 (max)'
 
 OUTPUT

@@ -42,6 +42,9 @@ uv run plot-llm-value --provider anthropic openai --reasoning-only
 # Median end-to-end response time instead of cost on the x-axis.
 uv run plot-llm-value --provider anthropic --x e2e
 
+# Plots plus a which-model Markdown table from one spec file (see --help, report).
+uv run plot-llm-value report spec.json --out-dir ~/Pictures
+
 # Two releases drawn as one connected series, labelled '5.2 (max)' and '5.3 (max)'.
 uv run plot-llm-value --model 'Claude Opus 5.5' --series z.ai 'GLM-5.2 (max)' 'GLM-5.3 (max)'
 ```

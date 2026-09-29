@@ -68,12 +68,32 @@ def _key(env_file):
     )
 
 
+def _report(argv):
+    from .report import load_spec, run_report
+
+    parser = Parser(add_help=False)
+    parser.add_argument("spec", type=Path)
+    parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--timeout", type=float, default=30)
+    parser.add_argument("--env-file", type=Path)
+    args = parser.parse_args(argv)
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        raise SelectionError("--timeout must be positive and finite.")
+    spec = load_spec(args.spec)
+    snapshot = fetch_models(_key(args.env_file), timeout=args.timeout)
+    result = run_report(spec, normalize(snapshot["data"]), snapshot["source"], args.out_dir)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--help" in argv or "-h" in argv or argv == ["help"]:
         print(files("plot_llm_value").joinpath("help.txt").read_text(), end="")
         return 0
     try:
+        if argv and argv[0] == "report":
+            return _report(argv[1:])
         command, args = _arguments(argv)
         snapshot = fetch_models(_key(args.env_file), timeout=args.timeout)
         catalog = normalize(snapshot["data"])
