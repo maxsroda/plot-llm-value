@@ -194,3 +194,22 @@ def test_invalid_series_fails_with_usage_error(series, live_api, capsys):
 def test_series_variant_in_two_series_fails(live_api, capsys):
     argv = ["data", "--series", "A", "Alpha (low)", "Alpha (high)"]
     assert main(argv + ["--series", "B", "Alpha (low)", "Alpha (medium)"]) == 2
+
+
+def test_x_e2e_uses_measured_response_time_and_its_own_frontier(live_api, capsys):
+    assert main(["data", "--provider", "openai", "--x", "e2e"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["x_axis"]["key"] == "e2e"
+    assert result["x_axis"]["field"] == "performance.median_end_to_end_response_time_seconds"
+    assert {row["x"] for row in result["rows"]} == {5}
+    assert all(row["x"] == row["e2e_seconds"] for row in result["rows"])
+
+
+def test_x_e2e_plot_labels_the_axis_in_seconds(live_api, capsys):
+    assert main(["--provider", "openai", "--x", "e2e"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["pareto_frontier"][0]["x"] == 5
+
+
+def test_x_is_rejected_for_models(live_api):
+    assert main(["models", "--x", "e2e"]) == 2

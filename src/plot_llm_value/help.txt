@@ -7,6 +7,8 @@ DESCRIPTION
   models, inspect cost/capability tradeoffs, or display a comparison in chat.
   Cost is AA's measured USD per Intelligence Index task, never token pricing.
   Coding and Agentic plots still use Intelligence Index task costs on the x-axis.
+  --x swaps cost for one of AA's median response times, measured on AA's own
+  speed-benchmark prompts rather than Intelligence Index tasks.
 
 INSTRUCTIONS
   1. Set ARTIFICIAL_ANALYSIS_API_KEY (or AA_API_KEY). Obtain a key at
@@ -24,8 +26,10 @@ INSTRUCTIONS
 
 SYNOPSIS
   plot-llm-value [plot] [SELECTION] [--series LABEL VARIANT VARIANT ...]
-                 [--metric METRIC] [--reasoning-only] [--no-pareto] [--no-capability-lines] [--output PATH]
-  plot-llm-value data [SELECTION] [--series ...] [--metric METRIC] [--reasoning-only]
+                 [--metric METRIC] [--x AXIS] [--reasoning-only] [--linear-x]
+                 [--no-pareto] [--no-capability-lines] [--output PATH]
+  plot-llm-value data [SELECTION] [--series ...] [--metric METRIC] [--x AXIS]
+                      [--reasoning-only]
   plot-llm-value models [SELECTION] [--series ...] [--reasoning-only]
   plot-llm-value help | --help | -h
 
@@ -50,7 +54,9 @@ COMMANDS
       inside a dashed effort gap of its own family instead becomes a hollow point
       on that segment: its score is measured, its cost interpolated by effort rank
       between the two measured neighbours, reported in inferred_cost with its
-      effort label suffixed '?'. Neither kind joins the frontier, which needs
+      effort label suffixed '?'. With --x, read 'cost' above as the chosen time:
+      the reason reads 'time unavailable' and the guess is reported as
+      inferred_<row field>, e.g. inferred_e2e_seconds. Neither kind joins the frontier, which needs
       measured costs; a measured zero cost is never treated as a guess.
       Only a missing score removes a row; those are excluded and reported.
       Fails if no row has a measured cost, since the x-axis would be empty.
@@ -85,6 +91,16 @@ OPTIONS
                              row's family is LABEL, effort that point label, and
                              series_rank its position. Repeat for several series.
   --metric METRIC            intelligence (default), coding, agentic (or agent).
+  --x AXIS                   Plot and data: x-axis, lower is better. cost (default,
+                             USD per Intelligence Index task); e2e (median
+                             end-to-end response time, s); first-token (median
+                             time to first token, s); first-answer-token (the
+                             same, excluding reasoning tokens, s). Every row
+                             carries e2e_seconds, first_token_seconds and
+                             first_answer_token_seconds; compared rows add x, the
+                             chosen value, and the result an x_axis block. A row
+                             missing the chosen value is excluded from the
+                             frontier as 'missing time', like 'missing cost'.
   --reasoning-only           Drop variants AA marks Non-reasoning (or 'none').
                              Applies to every command and changes the frontier,
                              which is always relative to the rows kept. A row
@@ -127,6 +143,7 @@ EXAMPLES
   plot-llm-value --provider google --no-pareto
   plot-llm-value --provider anthropic openai --reasoning-only
   plot-llm-value --env-file .env --provider openai
+  plot-llm-value --provider anthropic --x e2e --output e2e.png
   plot-llm-value --model 'Claude Opus 5.5' --series z.ai 'GLM-5.2 (max)' 'GLM-5.3 (max)'
 
 OUTPUT

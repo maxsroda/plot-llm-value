@@ -154,7 +154,7 @@ def _inferred_cost(row, gaps, *, linear_x):
         low, high = _rank(start), _rank(end)
         if low < rank < high:
             fraction = (rank - low) / (high - low)
-            a, b = start["cost_per_task_usd"], end["cost_per_task_usd"]
+            a, b = start["x"], end["x"]
             if linear_x:
                 return a + fraction * (b - a), (start, end)
             return math.exp(math.log(a) + fraction * math.log(b / a)), (start, end)
@@ -164,6 +164,11 @@ def _inferred_cost(row, gaps, *, linear_x):
 def build_figure(
     comparison, *, linear_x=False, pareto=True, reasoning_only=False, capability_lines=True
 ):
+    axis = comparison["x_axis"]
+    noun = axis["noun"]
+    unavailable = f"{noun} unavailable"
+    # inferred_cost_usd predates the other axes; keep its name for existing callers.
+    inferred_key = "inferred_cost_usd" if axis["key"] == "cost" else "inferred_" + axis["row_key"]
     groups, capability_only, excluded = defaultdict(list), defaultdict(list), []
     for row in comparison["rows"]:
         key = (row["provider_id"], row["family"])
@@ -171,15 +176,15 @@ def build_figure(
             excluded.append(
                 {"id": row["id"], "name": row["name"], "reasons": list(row["exclusion_reasons"])}
             )
-        elif row["cost_per_task_usd"] is None:
-            capability_only[key].append((row, "cost unavailable"))
-        elif row["cost_per_task_usd"] == 0 and not linear_x:
-            capability_only[key].append((row, "zero cost on log x"))
+        elif row["x"] is None:
+            capability_only[key].append((row, unavailable))
+        elif row["x"] == 0 and not linear_x:
+            capability_only[key].append((row, f"zero {noun} on log x"))
         else:
             groups[key].append(row)
     if not groups:
         raise SelectionError(
-            "No measured costs to plot; a cost axis needs at least one measured cost."
+            f"No measured {noun}s to plot; a {noun} axis needs at least one measured {noun}."
         )
     count = sum(map(len, groups.values()))
     flat = [entry for entries in capability_only.values() for entry in entries]
@@ -191,9 +196,9 @@ def build_figure(
     keys = sorted(set(groups) | set(capability_only))
     # The frontier follows the measured points only. A row without a cost states
     # nothing about cost, so it can neither dominate nor be dominated.
-    frontier = pareto_frontier([r for rows in groups.values() for r in rows])
+    frontier = pareto_frontier([r for rows in groups.values() for r in rows], "x")
     # Always reported in the result; --no-pareto only suppresses the drawn line.
-    frontier_xy = [(r["cost_per_task_usd"], r["score"]) for r in frontier] if pareto else []
+    frontier_xy = [(r["x"], r["score"]) for r in frontier] if pareto else []
     for expansion in (1, 1.3, 1.7):
         width, height = 10 * scale * expansion, 7.2 * scale * expansion
         fig, ax = plt.subplots(figsize=(width, height), dpi=180)
@@ -234,9 +239,7 @@ def build_figure(
                 # guess the dashed segment already makes; a measured zero cost is
                 # not a guess, so it keeps its capability line.
                 guess = (
-                    _inferred_cost(row, gaps, linear_x=linear_x)
-                    if reason == "cost unavailable"
-                    else None
+                    _inferred_cost(row, gaps, linear_x=linear_x) if reason == unavailable else None
                 )
                 if guess is None:
                     if draw_capability_lines:
@@ -245,9 +248,7 @@ def build_figure(
                         # An unavailable cost is what the line itself means; a measured
                         # zero cost is a different fact and still worth spelling out.
                         label = (
-                            row["name"]
-                            if reason == "cost unavailable"
-                            else f"{row['name']} · {reason}"
+                            row["name"] if reason == unavailable else f"{row['name']} · {reason}"
                         )
                         flat_labels.append((label, row["score"], color))
                     flat_rows.append(
@@ -266,7 +267,7 @@ def build_figure(
                             "id": row["id"],
                             "name": row["name"],
                             "score": row["score"],
-                            "inferred_cost_usd": cost,
+                            inferred_key: cost,
                             "interpolated_between": [start["name"], end["name"]],
                         }
                     )
@@ -277,12 +278,12 @@ def build_figure(
                     handles.append(Line2D([], [], color=color, lw=0.7, label=family))
                 continue
             marker = marker_map[rows[0]["provider"]]
-            xy = [(r["cost_per_task_usd"], r["score"]) for r in rows]
+            xy = [(r["x"], r["score"]) for r in rows]
             coordinates.extend(xy)
             for start, end in zip(rows, rows[1:]):
                 a, b = (
-                    (start["cost_per_task_usd"], start["score"]),
-                    (end["cost_per_task_usd"], end["score"]),
+                    (start["x"], start["score"]),
+                    (end["x"], end["score"]),
                 )
                 gap = _rank(end) - _rank(start) > 1
                 (line,) = ax.plot(
@@ -364,17 +365,20 @@ def build_figure(
                 ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
             else:
                 ax.xaxis.set_major_locator(LogLocator(subs=(1, 2, 3, 5) if decades < 2 else (1,)))
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"${value:g}"))
+        tick = "${:g}" if axis["unit"] == "USD" else "{:g} " + axis["unit"]
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: tick.format(value)))
         ax.xaxis.set_minor_formatter(NullFormatter())
         ax.tick_params(labelsize=8)
         metric = comparison["metric"]["label"]
         ax.set_ylabel("Artificial Analysis " + metric, fontsize=9.5, labelpad=9)
         ax.set_xlabel(
-            "Cost per Intelligence Index task (USD" + (", log scale)" if not linear_x else ")"),
+            f"{axis['label']} ({axis['unit']}" + (", log scale)" if not linear_x else ")"),
             fontsize=9.5,
             labelpad=9,
         )
-        fig.text(0.095, 0.953, metric + " vs. cost per task", weight="bold", fontsize=16, ha="left")
+        fig.text(
+            0.095, 0.953, metric + " vs. " + axis["title"], weight="bold", fontsize=16, ha="left"
+        )
         fig.text(
             0.095,
             0.914,
@@ -389,7 +393,9 @@ def build_figure(
             )
         if flat_labels:
             handles.append(
-                Line2D([], [], color="#555555", lw=0.7, label="Capability only (no measured cost)")
+                Line2D(
+                    [], [], color="#555555", lw=0.7, label=f"Capability only (no measured {noun})"
+                )
             )
         if inferred_rows:
             handles.append(
@@ -401,7 +407,7 @@ def build_figure(
                     markeredgecolor="#555555",
                     marker="o",
                     lw=0,
-                    label="Hollow: cost inferred from gap",
+                    label=f"Hollow: {noun} inferred from gap",
                 )
             )
         if len(frontier_xy) > 1:
@@ -424,7 +430,11 @@ def build_figure(
             f"Retrieved {source.get('retrieved_at', 'unknown')} · "
             f"Intelligence Index v{source.get('intelligence_index_version', '?')}",
             f"{count} / {len(comparison['rows'])} rows plotted · Dashed color: effort gap · "
-            "Costs use Intelligence Index tasks",
+            + (
+                "Costs use Intelligence Index tasks"
+                if axis["key"] == "cost"
+                else "Times are AA speed-benchmark medians, not Intelligence Index tasks"
+            ),
         ]
         if reasoning_only:
             notes.append(
@@ -433,7 +443,7 @@ def build_figure(
             )
         if flat_rows and draw_capability_lines:
             notes.append(
-                f"{len(flat_rows)} scored row(s) have no plottable cost: thin capability line "
+                f"{len(flat_rows)} scored row(s) have no plottable {noun}: thin capability line "
                 "at the score, kept off the frontier"
             )
         elif flat_rows:
@@ -443,18 +453,18 @@ def build_figure(
                 else f"more than {CAPABILITY_LINE_LIMIT} would clutter the plot"
             )
             notes.append(
-                f"{len(flat_rows)} scored row(s) have no plottable cost: not drawn ({why}); "
+                f"{len(flat_rows)} scored row(s) have no plottable {noun}: not drawn ({why}); "
                 "listed in capability_only"
             )
         if inferred_rows:
             notes.append(
-                f"{len(inferred_rows)} unpriced effort(s) sit hollow on their dashed gap: score "
-                "measured, cost interpolated by effort rank, kept off the frontier"
+                f"{len(inferred_rows)} unmeasured effort(s) sit hollow on their dashed gap: score "
+                f"measured, {noun} interpolated by effort rank, kept off the frontier"
             )
         if len(frontier_xy) > 1:
             notes.append(
-                "Dashed grey Pareto frontier: no plotted model is both cheaper and at least "
-                "as capable"
+                f"Dashed grey Pareto frontier: no plotted model is both {axis['better']} and at "
+                "least as capable"
             )
         fig.text(0.095, 0.025, "\n".join(notes), fontsize=6.5, color="#666666", linespacing=1.4)
         fig.canvas.draw()
@@ -503,6 +513,7 @@ def build_figure(
                         "id": row["id"],
                         "name": row["name"],
                         "cost_per_task_usd": row["cost_per_task_usd"],
+                        "x": row["x"],
                         "score": row["score"],
                     }
                     for row in frontier

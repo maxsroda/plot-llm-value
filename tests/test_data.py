@@ -170,3 +170,13 @@ def test_series_point_label_cuts_shared_prefix_at_a_word_boundary(names, labels)
     from plot_llm_value.data import _point_label
 
     assert [_point_label(name, names) for name in names] == labels
+
+
+def test_missing_time_excludes_a_row_only_on_a_time_axis(raw_models):
+    from plot_llm_value.data import compare, normalize
+
+    raw_models[0]["performance"] = {}
+    rows = normalize(raw_models)
+    assert rows[0]["e2e_seconds"] is None
+    assert compare(rows, x_axis="e2e")["rows"][0]["exclusion_reasons"] == ["missing time"]
+    assert compare(rows)["rows"][0]["comparable"]

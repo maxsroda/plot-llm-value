@@ -10,6 +10,49 @@ METRICS = {
     "coding": "Coding Index",
     "agentic": "Agentic Index",
 }
+# Each x-axis is a lower-is-better measurement AA reports per row.
+X_AXES = {
+    "cost": {
+        "field": "artificial_analysis_intelligence_index_cost.cost_per_task.total_cost",
+        "row_key": "cost_per_task_usd",
+        "label": "Cost per Intelligence Index task",
+        "title": "cost per task",
+        "unit": "USD",
+        "noun": "cost",
+        "better": "cheaper",
+        "workload": "Artificial Analysis Intelligence Index task",
+    },
+    "e2e": {
+        "field": "performance.median_end_to_end_response_time_seconds",
+        "row_key": "e2e_seconds",
+        "label": "Median end-to-end response time",
+        "title": "end-to-end response time",
+        "unit": "s",
+        "noun": "time",
+        "better": "faster",
+        "workload": "AA speed benchmark prompt, not Intelligence Index tasks",
+    },
+    "first-token": {
+        "field": "performance.median_time_to_first_token_seconds",
+        "row_key": "first_token_seconds",
+        "label": "Median time to first token",
+        "title": "time to first token",
+        "unit": "s",
+        "noun": "time",
+        "better": "faster",
+        "workload": "AA speed benchmark prompt, not Intelligence Index tasks",
+    },
+    "first-answer-token": {
+        "field": "performance.median_time_to_first_answer_token_seconds",
+        "row_key": "first_answer_token_seconds",
+        "label": "Median time to first answer token",
+        "title": "time to first answer token",
+        "unit": "s",
+        "noun": "time",
+        "better": "faster",
+        "workload": "AA speed benchmark prompt, not Intelligence Index tasks",
+    },
+}
 EFFORTS = {
     "none": 0,
     "non-reasoning": 0,
@@ -74,24 +117,25 @@ def effort_order(effort):
     return (99, base)
 
 
-def _dominates(other, row):
-    """True when `other` is no costlier and no less capable, and strictly better once."""
+def _dominates(other, row, x="cost_per_task_usd"):
+    """True when `other` is no worse on x and no less capable, and strictly better once."""
     return (
-        other["cost_per_task_usd"] <= row["cost_per_task_usd"]
+        other[x] <= row[x]
         and other["score"] >= row["score"]
-        and (other["cost_per_task_usd"] < row["cost_per_task_usd"] or other["score"] > row["score"])
+        and (other[x] < row[x] or other["score"] > row["score"])
     )
 
 
-def pareto_frontier(rows):
-    """Undominated rows, ordered by cost. Exact ties stay on the frontier together.
+def pareto_frontier(rows, x="cost_per_task_usd"):
+    """Undominated rows, ordered by x. Exact ties stay on the frontier together.
 
-    Rows must carry a numeric score and cost. Membership depends on the set given:
-    the frontier of the comparable rows is not the frontier of the plotted ones.
+    Rows must carry a numeric score and a numeric value under `x`, where lower is
+    better. Membership depends on the set given: the frontier of the comparable
+    rows is not the frontier of the plotted ones.
     """
     return sorted(
-        (row for row in rows if not any(_dominates(other, row) for other in rows)),
-        key=lambda row: (row["cost_per_task_usd"], row["score"], row["id"]),
+        (row for row in rows if not any(_dominates(other, row, x) for other in rows)),
+        key=lambda row: (row[x], row["score"], row["id"]),
     )
 
 
@@ -126,6 +170,7 @@ def normalize(raw):
                     raise ValueError
             family, effort = split_effort(row["name"])
             evaluations = _object(row.get("evaluations"))
+            performance = _object(row.get("performance"))
             cost = _object(
                 _object(row.get("artificial_analysis_intelligence_index_cost")).get("cost_per_task")
             ).get("total_cost")
@@ -145,6 +190,13 @@ def normalize(raw):
                         for key in METRICS
                     },
                     "cost_per_task_usd": _number(cost, nonnegative=True),
+                    **{
+                        axis["row_key"]: _number(
+                            performance.get(axis["field"].partition(".")[2]), nonnegative=True
+                        )
+                        for name, axis in X_AXES.items()
+                        if name != "cost"
+                    },
                     "url": "https://artificialanalysis.ai/models/" + row["slug"],
                 }
             )
@@ -239,32 +291,37 @@ def join_series(rows, catalog, series):
     return rows
 
 
-def compare(rows, metric="intelligence"):
+def compare(rows, metric="intelligence", x_axis="cost"):
     metric = "agentic" if metric == "agent" else metric
     if metric not in METRICS:
         raise SelectionError(f"Unknown metric {metric!r}; choose intelligence, coding, or agentic.")
+    if x_axis not in X_AXES:
+        raise SelectionError(f"Unknown x-axis {x_axis!r}; choose {', '.join(X_AXES)}.")
+    axis = X_AXES[x_axis]
     result = []
     for row in rows:
-        score, cost = row["indices"][metric], row["cost_per_task_usd"]
+        score, x = row["indices"][metric], row[axis["row_key"]]
         reasons = ([] if score is not None else ["missing score"]) + (
-            [] if cost is not None else ["missing cost"]
+            [] if x is not None else [f"missing {axis['noun']}"]
         )
         result.append(
             {
                 **row,
                 "score": score,
+                "x": x,
                 "comparable": not reasons,
                 "exclusion_reasons": reasons,
                 "pareto_optimal": None,
             }
         )
     comparable = [r for r in result if r["comparable"]]
-    optimal = {row["id"] for row in pareto_frontier(comparable)}
+    optimal = {row["id"] for row in pareto_frontier(comparable, "x")}
     for row in comparable:
         row["pareto_optimal"] = row["id"] in optimal
     return {
         "schema_version": 1,
         "metric": {"key": metric, "label": METRICS[metric], "higher_is_better": True},
+        "x_axis": {"key": x_axis, **axis, "lower_is_better": True},
         "cost": {
             "field": "artificial_analysis_intelligence_index_cost.cost_per_task.total_cost",
             "unit": "USD",

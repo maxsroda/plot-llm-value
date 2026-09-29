@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from .api import APIError, fetch_models
-from .data import SelectionError, compare, is_non_reasoning, join_series, normalize, select
+from .data import X_AXES, SelectionError, compare, is_non_reasoning, join_series, normalize, select
 
 
 class Parser(argparse.ArgumentParser):
@@ -31,6 +31,7 @@ def _arguments(argv):
         "--metric", choices=["intelligence", "coding", "agentic", "agent"], default="intelligence"
     )
     parser.add_argument("--series", nargs="+", action="append")
+    parser.add_argument("--x", choices=list(X_AXES), default="cost")
     parser.add_argument("--reasoning-only", action="store_true")
     parser.add_argument("--linear-x", action="store_true")
     parser.add_argument("--no-pareto", action="store_true")
@@ -40,6 +41,8 @@ def _arguments(argv):
     parser.add_argument("--env-file", type=Path)
     args = parser.parse_args(argv)
     plot_only = (args.linear_x, args.no_pareto, args.no_capability_lines, args.output)
+    if command == "models" and args.x != "cost":
+        raise SelectionError("--x applies to plot and data, not models.")
     if command != "plot" and any(plot_only):
         raise SelectionError(
             "--linear-x, --no-pareto, --no-capability-lines and --output are plot-only options."
@@ -87,7 +90,7 @@ def main(argv=None):
         if command == "models":
             result = {"schema_version": 1, "source": snapshot["source"], "rows": rows}
         else:
-            result = compare(rows, args.metric)
+            result = compare(rows, args.metric, args.x)
             result["source"] = snapshot["source"]
             if command == "plot":
                 from .plot import save_plot
