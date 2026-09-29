@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from .api import APIError, fetch_models
-from .data import SelectionError, compare, is_non_reasoning, normalize, select
+from .data import SelectionError, compare, is_non_reasoning, join_series, normalize, select
 
 
 class Parser(argparse.ArgumentParser):
@@ -30,6 +30,7 @@ def _arguments(argv):
     parser.add_argument(
         "--metric", choices=["intelligence", "coding", "agentic", "agent"], default="intelligence"
     )
+    parser.add_argument("--series", nargs="+", action="append")
     parser.add_argument("--reasoning-only", action="store_true")
     parser.add_argument("--linear-x", action="store_true")
     parser.add_argument("--no-pareto", action="store_true")
@@ -72,12 +73,11 @@ def main(argv=None):
     try:
         command, args = _arguments(argv)
         snapshot = fetch_models(_key(args.env_file), timeout=args.timeout)
-        rows = select(
-            normalize(snapshot["data"]),
-            providers=args.provider,
-            models=args.model,
-            variants=args.variant,
-        )
+        catalog = normalize(snapshot["data"])
+        rows = select(catalog, providers=args.provider, models=args.model, variants=args.variant)
+        if args.series and not (args.provider or args.model or args.variant):
+            rows = []  # --series alone selects only its own variants, not the whole catalog.
+        rows = join_series(rows, catalog, args.series)
         if args.reasoning_only:
             rows = [row for row in rows if not is_non_reasoning(row)]
             if not rows:

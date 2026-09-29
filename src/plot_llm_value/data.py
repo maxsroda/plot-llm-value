@@ -186,6 +186,59 @@ def select(rows, *, providers=None, models=None, variants=None):
     return [row for row in rows if row["id"] in selected]
 
 
+def _point_label(name, names):
+    """The variant name without the prefix every name in its series shares.
+
+    The prefix is cut back to its last space, hyphen or underscore so a label
+    never starts mid-word: 'GLM-5.2 (max)' and 'GLM-5.3 (max)' become
+    '5.2 (max)' and '5.3 (max)', not '2 (max)' and '3 (max)'.
+    """
+    prefix = names[0]
+    for other in names[1:]:
+        while not other.startswith(prefix):
+            prefix = prefix[:-1]
+    cut = max(prefix.rfind(c) for c in " -_") + 1
+    return name[cut:].strip() or name
+
+
+def join_series(rows, catalog, series):
+    """Draw several variants, even of different releases, as one connected series.
+
+    Each entry of `series` is [LABEL, VARIANT, VARIANT, ...]. Variants resolve
+    like --variant against the whole catalog and are added to the selection.
+    Each joined row takes LABEL as its family, a point label as its effort, and
+    its position in the list as series_rank, which orders and connects it.
+    """
+    if not series:
+        return rows
+    rows = list(rows)
+    claimed = {}
+    for label, *variants in series:
+        if not label.strip():
+            raise SelectionError("--series needs a non-empty label before its variants.")
+        if len(variants) < 2:
+            raise SelectionError(f"--series {label!r} needs at least two variants.")
+        members = [select(catalog, variants=[variant])[0] for variant in variants]
+        if len({row["provider_id"] for row in members}) != 1:
+            raise SelectionError(f"--series {label!r} mixes model creators; join one creator's.")
+        names = [row["name"] for row in members]
+        for rank, member in enumerate(members):
+            if member["id"] in claimed:
+                raise SelectionError(
+                    f"{member['name']!r} is in both --series {claimed[member['id']]!r} "
+                    f"and {label!r}."
+                )
+            claimed[member["id"]] = label
+            joined = {
+                **member,
+                "family": label,
+                "effort": _point_label(member["name"], names),
+                "series_rank": rank,
+            }
+            rows = [row for row in rows if row["id"] != member["id"]] + [joined]
+    return rows
+
+
 def compare(rows, metric="intelligence"):
     metric = "agentic" if metric == "agent" else metric
     if metric not in METRICS:

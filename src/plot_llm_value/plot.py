@@ -19,6 +19,14 @@ from matplotlib.transforms import Bbox
 
 from .data import SelectionError, effort_order, pareto_frontier
 
+
+def _rank(row):
+    """Position along a series: the --series order when joined, else the effort order."""
+    if row.get("series_rank") is not None:
+        return row["series_rank"]
+    return effort_order(row["effort"])[0]
+
+
 BACKGROUND = "#FBFAF7"
 COLORS = ["#6B4F9B", "#D97745", "#2C7A7B", "#4C78A8", "#59A14F", "#B279A2", "#8C6D31", "#B64857"]
 MARKERS = ["o", "s", "^", "D", "v", "P", "X", "<", ">", "h", "*"]
@@ -141,9 +149,9 @@ def _inferred_cost(row, gaps, *, linear_x):
     placed at its rank's share of the gap, in the axis's own spacing. Returns
     None when no gap of measured neighbors spans the effort's rank.
     """
-    rank = effort_order(row["effort"])[0]
+    rank = _rank(row)
     for start, end in gaps:
-        low, high = effort_order(start["effort"])[0], effort_order(end["effort"])[0]
+        low, high = _rank(start), _rank(end)
         if low < rank < high:
             fraction = (rank - low) / (high - low)
             a, b = start["cost_per_task_usd"], end["cost_per_task_usd"]
@@ -202,7 +210,7 @@ def build_figure(
         for i, (provider_id, family) in enumerate(keys):
             rows = sorted(
                 groups.get((provider_id, family), []),
-                key=lambda r: (effort_order(r["effort"]), r["id"]),
+                key=lambda r: (_rank(r), effort_order(r["effort"]), r["id"]),
             )
             color = (
                 COLORS[i % len(COLORS)]
@@ -210,13 +218,15 @@ def build_figure(
                 else plt.cm.turbo((i + 0.5) / len(keys))
             )
             gaps = [
-                (start, end)
-                for start, end in zip(rows, rows[1:])
-                if effort_order(end["effort"])[0] - effort_order(start["effort"])[0] > 1
+                (start, end) for start, end in zip(rows, rows[1:]) if _rank(end) - _rank(start) > 1
             ]
             unpriced = sorted(
                 capability_only.get((provider_id, family), []),
-                key=lambda entry: (effort_order(entry[0]["effort"]), entry[0]["id"]),
+                key=lambda entry: (
+                    _rank(entry[0]),
+                    effort_order(entry[0]["effort"]),
+                    entry[0]["id"],
+                ),
             )
             inferred = []
             for row, reason in unpriced:
@@ -274,7 +284,7 @@ def build_figure(
                     (start["cost_per_task_usd"], start["score"]),
                     (end["cost_per_task_usd"], end["score"]),
                 )
-                gap = effort_order(end["effort"])[0] - effort_order(start["effort"])[0] > 1
+                gap = _rank(end) - _rank(start) > 1
                 (line,) = ax.plot(
                     [a[0], b[0]],
                     [a[1], b[1]],

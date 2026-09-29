@@ -156,3 +156,17 @@ def test_named_fallback_preserves_effort_order():
     from plot_llm_value.data import effort_order
 
     assert effort_order("low with opus 4.8 fallback") < effort_order("high")
+
+
+@pytest.mark.parametrize(
+    "names,labels",
+    [
+        (["GLM-5.2 (max)", "GLM-5.3 (max)"], ["5.2 (max)", "5.3 (max)"]),
+        (["Alpha (low)", "Beta (high)"], ["Alpha (low)", "Beta (high)"]),
+        (["Model X", "Model Y"], ["X", "Y"]),
+    ],
+)
+def test_series_point_label_cuts_shared_prefix_at_a_word_boundary(names, labels):
+    from plot_llm_value.data import _point_label
+
+    assert [_point_label(name, names) for name in names] == labels

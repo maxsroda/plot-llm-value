@@ -155,3 +155,42 @@ def test_each_command_fetches_fresh(live_api, capsys):
         assert main([command]) == 0
         json.loads(capsys.readouterr().out)
     assert len(live_api) == 3
+
+
+def test_series_joins_releases_in_given_order_and_adds_to_selection(live_api, capsys):
+    argv = ["data", "--variant", "Alpha (low)", "--series", "Joined", "Beta (max with fallback)"]
+    assert main(argv + ["Gamma (max)"]) == 0
+    rows = {row["name"]: row for row in json.loads(capsys.readouterr().out)["rows"]}
+    assert set(rows) == {"Alpha (low)", "Beta (max with fallback)", "Gamma (max)"}
+    beta, gamma = rows["Beta (max with fallback)"], rows["Gamma (max)"]
+    assert (beta["family"], beta["effort"], beta["series_rank"]) == (
+        "Joined",
+        "Beta (max with fallback)",
+        0,
+    )
+    assert (gamma["family"], gamma["series_rank"]) == ("Joined", 1)
+    assert "series_rank" not in rows["Alpha (low)"]
+
+
+def test_series_alone_selects_only_its_variants(live_api, capsys):
+    assert main(["models", "--series", "A", "Alpha (low)", "Alpha (high)"]) == 0
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert [(r["effort"], r["series_rank"]) for r in rows] == [("(low)", 0), ("(high)", 1)]
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        ["Solo", "Alpha (low)"],
+        ["Mixed", "Alpha (low)", "Beta (low with fallback)"],
+        ["X", "Alpha (low)", "Nope"],
+    ],
+)
+def test_invalid_series_fails_with_usage_error(series, live_api, capsys):
+    assert main(["data", "--series", *series]) == 2
+    assert capsys.readouterr().out == ""
+
+
+def test_series_variant_in_two_series_fails(live_api, capsys):
+    argv = ["data", "--series", "A", "Alpha (low)", "Alpha (high)"]
+    assert main(argv + ["--series", "B", "Alpha (low)", "Alpha (medium)"]) == 2

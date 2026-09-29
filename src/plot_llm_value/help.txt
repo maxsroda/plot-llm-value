@@ -23,10 +23,10 @@ INSTRUCTIONS
      wait the reported Retry-After interval. No stale data or web-scrape fallback.
 
 SYNOPSIS
-  plot-llm-value [plot] [SELECTION] [--metric METRIC] [--reasoning-only]
-                 [--linear-x] [--no-pareto] [--no-capability-lines] [--output PATH]
-  plot-llm-value data [SELECTION] [--metric METRIC] [--reasoning-only]
-  plot-llm-value models [SELECTION] [--reasoning-only]
+  plot-llm-value [plot] [SELECTION] [--series LABEL VARIANT VARIANT ...]
+                 [--metric METRIC] [--reasoning-only] [--no-pareto] [--no-capability-lines] [--output PATH]
+  plot-llm-value data [SELECTION] [--series ...] [--metric METRIC] [--reasoning-only]
+  plot-llm-value models [SELECTION] [--series ...] [--reasoning-only]
   plot-llm-value help | --help | -h
 
 COMMANDS
@@ -74,6 +74,16 @@ OPTIONS
   --variant NAME [NAME ...]   Exact AA row name, slug or ID; only those settings.
                              Names are case-insensitive; no substring matching.
                              Unknown/ambiguous selections fail, never guess.
+  --series LABEL VARIANT VARIANT [...]
+                             Join two or more variants of one creator, even of
+                             different releases, into one series named LABEL,
+                             connected in the order given. Variants resolve as
+                             --variant does and are added to the selection; alone,
+                             --series selects only its variants. Each point is
+                             labelled with its name minus the prefix the series
+                             shares ('GLM-5.2 (max)' -> '5.2 (max)'); in JSON the
+                             row's family is LABEL, effort that point label, and
+                             series_rank its position. Repeat for several series.
   --metric METRIC            intelligence (default), coding, agentic (or agent).
   --reasoning-only           Drop variants AA marks Non-reasoning (or 'none').
                              Applies to every command and changes the frontier,
@@ -117,6 +127,7 @@ EXAMPLES
   plot-llm-value --provider google --no-pareto
   plot-llm-value --provider anthropic openai --reasoning-only
   plot-llm-value --env-file .env --provider openai
+  plot-llm-value --model 'Claude Opus 5.5' --series z.ai 'GLM-5.2 (max)' 'GLM-5.3 (max)'
 
 OUTPUT
   Plot: {"image_path":"/tmp/plot-llm-value-.../comparison.png", ...}

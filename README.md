@@ -38,6 +38,9 @@ uv run plot-llm-value --provider anthropic --metric agentic --linear-x --output 
 
 # Reasoning settings only, dropping the variants AA marks Non-reasoning.
 uv run plot-llm-value --provider anthropic openai --reasoning-only
+
+# Two releases drawn as one connected series, labelled '5.2 (max)' and '5.3 (max)'.
+uv run plot-llm-value --model 'Claude Opus 5.5' --series z.ai 'GLM-5.2 (max)' 'GLM-5.3 (max)'
 ```
 
 `--reasoning-only` drops variants AA marks `Non-reasoning` (or `none`) from every
