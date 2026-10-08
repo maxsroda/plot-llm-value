@@ -17,6 +17,7 @@ from plot_llm_value.data import SelectionError, compare, normalize, select, spli
         ("Model (Thinking)", "Model", "thinking"),
         ("Model (Non-reasoning)", "Model", "non-reasoning"),
         ("Model (16k)", "Model", "16k"),
+        ("Model (Medium, Default Fallback)", "Model", "medium with fallback"),
         ("Unspecified", "Unspecified", None),
     ],
 )

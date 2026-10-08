@@ -139,11 +139,6 @@ def build_table(spec, catalog, source, plot_files):
         f" UTC (Intelligence Index v{source['intelligence_index_version']}).",
         "Plots: " + " · ".join(f"[{label}]({file})" for label, file in plot_files) + ".",
     ]
-    if any("with fallback" in (m["effort"] or "") for m in used):
-        lines.append(
-            'Every Claude setting below is AA\'s "Adaptive Reasoning, … Effort, Default Fallback"'
-            " row."
-        )
     if any(r.get("key") for r in spec["rows"]):
         lines += ["", "★ = the key options. Rows are ordered by Int, the AA Intelligence Index."]
     lines += [

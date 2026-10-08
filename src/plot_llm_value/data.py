@@ -89,6 +89,9 @@ def split_effort(name):
                 fallback = "fallback" if verbose[3] == "default fallback" else verbose[3]
                 effort += " with " + fallback
             return name[: match.start()], effort
+        short = re.fullmatch(r"(minimal|low|medium|high|xhigh|max|ultra),\s*default fallback", suffix)
+        if short:
+            return name[: match.start()], short[1] + " with fallback"
         if (
             re.fullmatch(
                 r"(?:non-reasoning(?:,\s*(?:low|medium|high))?|none|minimal|low|"

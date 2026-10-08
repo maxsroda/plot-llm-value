@@ -310,7 +310,7 @@ def build_figure(
             requests.append((family, xy, color, True))
             for row, point in zip(rows, xy):
                 if row["effort"]:
-                    efforts.append((row["effort"], [point], color, False))
+                    efforts.append((row["effort"].partition(" with ")[0], [point], color, False))
             if inferred:
                 guessed_xy = [(cost, row["score"]) for row, cost in inferred]
                 hollow = ax.scatter(
