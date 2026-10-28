@@ -58,7 +58,11 @@ COMMANDS
       inside a dashed effort gap of its own family instead becomes a hollow point
       on that segment: its score is measured, its cost interpolated by effort rank
       between the two measured neighbours, reported in inferred_cost with its
-      effort label suffixed '?'. With --x, read 'cost' above as the chosen time:
+      effort label suffixed '?'. An unpriced effort directly below the family's
+      lowest measured effort becomes a hollow point joined by a dotted line: its
+      cost is that effort's cost times the median low-to-next cost ratio of the
+      other families plotted, reported in inferred_cost with estimated_from and
+      cost_ratio_low_to_next. report omits capability lines altogether. With --x, read 'cost' above as the chosen time:
       the reason reads 'time unavailable' and the guess is reported as
       inferred_<row field>, e.g. inferred_e2e_seconds. Neither kind joins the frontier, which needs
       measured costs; a measured zero cost is never treated as a guess.

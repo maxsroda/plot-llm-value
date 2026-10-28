@@ -2,6 +2,7 @@
 
 import colorsys
 import math
+import statistics
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -174,12 +175,24 @@ def _place_labels(ax, requests, point_positions, segments):
     return True
 
 
-def _inferred_cost(row, gaps, *, linear_x):
-    """Cost implied for an unpriced effort by the dashed segment spanning its rank.
+def _rung_ratios(groups):
+    """Each family's lowest measured cost divided by its next one, where both are adjacent efforts."""
+    ratios = {}
+    for key, rows in groups.items():
+        ordered = sorted(rows, key=_rank)
+        if len(ordered) > 1 and _rank(ordered[1]) - _rank(ordered[0]) == 1:
+            if ordered[0]["x"] > 0 and ordered[1]["x"] > 0:
+                ratios[key] = ordered[0]["x"] / ordered[1]["x"]
+    return ratios
 
-    Only the cost is guessed: the score is AA's own measurement. The effort is
-    placed at its rank's share of the gap, in the axis's own spacing. Returns
-    None when no gap of measured neighbors spans the effort's rank.
+
+def _estimated_cost(row, rows, gaps, rung_ratio, *, linear_x):
+    """Cost guessed for an unpriced effort; the score stays AA's own measurement.
+
+    Inside a dashed gap of its family, the cost is placed at the effort's rank's
+    share of the gap. Directly below the family's lowest measured effort, it is that
+    effort's cost times rung_ratio, the median low-to-next cost ratio of the other
+    families. Returns (cost, detail), or None when neither applies.
     """
     rank = _rank(row)
     for start, end in gaps:
@@ -188,8 +201,13 @@ def _inferred_cost(row, gaps, *, linear_x):
             fraction = (rank - low) / (high - low)
             a, b = start["x"], end["x"]
             if linear_x:
-                return a + fraction * (b - a), (start, end)
-            return math.exp(math.log(a) + fraction * math.log(b / a)), (start, end)
+                cost = a + fraction * (b - a)
+            else:
+                cost = math.exp(math.log(a) + fraction * math.log(b / a))
+            return cost, {"interpolated_between": [start["name"], end["name"]]}
+    if rung_ratio is not None and rows and _rank(rows[0]) - rank == 1:
+        detail = {"estimated_from": rows[0]["name"], "cost_ratio_low_to_next": rung_ratio}
+        return rows[0]["x"] * rung_ratio, detail
     return None
 
 
@@ -219,6 +237,7 @@ def build_figure(
             f"No measured {noun}s to plot; a {noun} axis needs at least one measured {noun}."
         )
     count = sum(map(len, groups.values()))
+    rung_ratios = _rung_ratios(groups)
     flat = [entry for entries in capability_only.values() for entry in entries]
     draw_capability_lines = capability_lines and len(flat) <= CAPABILITY_LINE_LIMIT
     label_count = count + len(groups) + (2 * len(flat) if draw_capability_lines else 0)
@@ -253,6 +272,8 @@ def build_figure(
         requests, handles, coordinates, data_segments = [], [], [], []
         efforts, flat_labels, flat_rows, inferred_rows = [], [], [], []
         for provider_id, family in keys:
+            others = [ratio for key, ratio in rung_ratios.items() if key != (provider_id, family)]
+            rung_ratio = statistics.median(others) if others else None
             rows = sorted(
                 groups.get((provider_id, family), []),
                 key=lambda r: (_rank(r), effort_order(r["effort"]), r["id"]),
@@ -269,13 +290,15 @@ def build_figure(
                     entry[0]["id"],
                 ),
             )
-            inferred = []
+            inferred, estimate_segments = [], []
             for row, reason in unpriced:
-                # An unpriced effort that falls inside its own family's gap is a
-                # guess the dashed segment already makes; a measured zero cost is
+                # An unpriced effort is a guess when it sits in its own family's gap or
+                # directly below its lowest measured effort; a measured zero cost is
                 # not a guess, so it keeps its capability line.
                 guess = (
-                    _inferred_cost(row, gaps, linear_x=linear_x) if reason == unavailable else None
+                    _estimated_cost(row, rows, gaps, rung_ratio, linear_x=linear_x)
+                    if reason == unavailable
+                    else None
                 )
                 if guess is None:
                     if draw_capability_lines:
@@ -296,15 +319,19 @@ def build_figure(
                         }
                     )
                 else:
-                    cost, (start, end) = guess
+                    cost, detail = guess
                     inferred.append((row, cost))
+                    if "estimated_from" in detail:
+                        estimate_segments.append(
+                            ((cost, row["score"]), (rows[0]["x"], rows[0]["score"]))
+                        )
                     inferred_rows.append(
                         {
                             "id": row["id"],
                             "name": row["name"],
                             "score": row["score"],
                             inferred_key: cost,
-                            "interpolated_between": [start["name"], end["name"]],
+                            **detail,
                         }
                     )
             if not rows:
@@ -362,6 +389,20 @@ def build_figure(
                 coordinates.extend(guessed_xy)
                 for (row, _), point in zip(inferred, guessed_xy):
                     efforts.append((f"{row['effort']}?", [point], color, False))
+            for a, b in estimate_segments:
+                # Dotted, unlike the dashed effort gaps: the cost here is estimated from
+                # other models, not interpolated within this family.
+                (line,) = ax.plot(
+                    [a[0], b[0]],
+                    [a[1], b[1]],
+                    color=color,
+                    lw=1.6,
+                    alpha=0.7,
+                    linestyle=":",
+                    zorder=2,
+                )
+                line.set_gid(f"estimate:{provider_id}:{family}")
+                data_segments.append((a, b))
             handles.append(Line2D([], [], color=color, marker=marker, lw=2, label=family))
         if len(frontier_xy) > 1:
             (line,) = ax.plot(
@@ -443,7 +484,7 @@ def build_figure(
                     markeredgecolor="#555555",
                     marker="o",
                     lw=0,
-                    label=f"Hollow: {noun} inferred from gap",
+                    label=f"Hollow: {noun} estimated, not measured",
                 )
             )
         if len(frontier_xy) > 1:
@@ -494,8 +535,9 @@ def build_figure(
             )
         if inferred_rows:
             notes.append(
-                f"{len(inferred_rows)} unmeasured effort(s) sit hollow on their dashed gap: score "
-                f"measured, {noun} interpolated by effort rank, kept off the frontier"
+                f"{len(inferred_rows)} unmeasured effort(s) drawn hollow: score measured, {noun} "
+                "estimated by effort rank in a gap (dashed) or from other models' lowest-effort "
+                "ratio (dotted), kept off the frontier"
             )
         if len(frontier_xy) > 1:
             notes.append(

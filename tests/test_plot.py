@@ -410,3 +410,34 @@ def test_each_provider_has_one_hue_and_the_best_model_is_the_darkest():
     assert hls[("a", "Opus")][0] == pytest.approx(hls[("a", "Haiku")][0])
     assert hls[("a", "Opus")][1] < hls[("a", "Haiku")][1]
     assert hls[("g", "Argon")][0] != pytest.approx(hls[("a", "Opus")][0])
+
+
+def test_lowest_unpriced_effort_is_estimated_from_other_families_low_to_next_ratio(raw_models):
+    medium = copy.deepcopy(raw_models[2])
+    medium.update(id="id-delta-medium", name="Delta (medium)")
+    medium["model_creator"] = {"id": "delta", "name": "Delta"}
+    medium["evaluations"]["artificial_analysis_intelligence_index"] = 40
+    medium["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = 2.0
+    low = copy.deepcopy(raw_models[1])
+    low.update(id="id-delta-low", name="Delta (low)")
+    low["model_creator"] = {"id": "delta", "name": "Delta"}
+    low["evaluations"]["artificial_analysis_intelligence_index"] = 30
+    low["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = None
+    fig, info = build_figure(comparison(raw_models + [medium, low]))
+    ax = fig.axes[0]
+    # Alpha's low/medium cost ratio is 0.5 and is the only other family's pair, so the
+    # estimate is Delta's medium cost (2.0) times 0.5.
+    (hollow,) = [c for c in ax.collections if c.get_gid() == "inferred:delta:Delta"]
+    assert hollow.get_offsets().tolist() == [pytest.approx([1.0, 30])]
+    assert [line for line in ax.lines if line.get_gid() == "capability:id-delta-low"] == []
+    assert [line for line in ax.lines if line.get_gid() == "estimate:delta:Delta"]
+    assert info["inferred_cost"] == [
+        {
+            "id": "id-delta-low",
+            "name": "Delta (low)",
+            "score": 30,
+            "inferred_cost_usd": pytest.approx(1.0),
+            "estimated_from": "Delta (medium)",
+            "cost_ratio_low_to_next": pytest.approx(0.5),
+        }
+    ]

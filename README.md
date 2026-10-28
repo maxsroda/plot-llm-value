@@ -98,13 +98,21 @@ footer says so, and `capability_lines_drawn` in the result is `false` while
 `capability_only` still lists every row. `--no-capability-lines` omits them at any
 count.
 
-An unpriced reasoning setting whose **effort rank falls inside a dashed gap of its
-own family** is instead drawn as a hollow point on that dashed segment, its effort
-label suffixed `?`, and listed in `inferred_cost` with the two neighbours it sits
-between. Only the cost is guessed — interpolated by effort rank, in the axis's own
-spacing — while the score is AA's measurement. Treat these points as the dashed
-line's own suggestion, not as data: effort ranks need not be evenly spaced in cost,
-and a family may simply not offer the setting the ladder implies.
+An unpriced reasoning setting is instead drawn as a hollow point, its effort label
+suffixed `?`, and listed in `inferred_cost`. The score stays AA's measurement; only
+the cost (or time, with `--x`) is guessed. Two cases:
+
+- **Inside a dashed gap of its own family**: the cost is interpolated by effort rank,
+  in the axis's own spacing, and the point sits on the dashed segment.
+- **Directly below its family's lowest measured effort** (for example Gemini 3.8
+  Flash low, when medium is measured): the cost is that effort's cost times the
+  median ratio of lowest-to-next cost across the other families in the plot. The
+  point is joined to the measured effort by a dotted line, and `inferred_cost` names
+  the effort it was estimated from and the ratio. API prices alone cannot give this,
+  because AA reports prices and total cost but not the tokens each task used.
+
+Treat these points as estimates, not as data: effort ranks need not be evenly spaced
+in cost, and the ratio is one assumption shared across families.
 
 Neither hollow points nor capability lines join the Pareto frontier: a row with no
 measured cost makes no claim about cost, so it can neither dominate nor be dominated.

@@ -174,7 +174,12 @@ def run_report(spec, catalog, source, out_dir):
         file = f"{spec['name']}.png" if axis == "cost" else f"{spec['name']}-{axis}.png"
         comparison = compare(rows, "intelligence", axis)
         comparison["source"] = source
-        save_plot(comparison, out_dir / file, reasoning_only=spec.get("reasoning_only", True))
+        save_plot(
+            comparison,
+            out_dir / file,
+            reasoning_only=spec.get("reasoning_only", True),
+            capability_lines=False,
+        )
         plot_files.append((X_AXES[axis]["title"], file))
         written.append(str(out_dir / file))
     table = out_dir / f"{spec['name']}.md"
