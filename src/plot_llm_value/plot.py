@@ -1,5 +1,6 @@
 """Headless Matplotlib rendering with label placement in display coordinates."""
 
+import colorsys
 import math
 import tempfile
 from collections import defaultdict
@@ -28,7 +29,38 @@ def _rank(row):
 
 
 BACKGROUND = "#FBFAF7"
-COLORS = ["#6B4F9B", "#D97745", "#2C7A7B", "#4C78A8", "#59A14F", "#B279A2", "#8C6D31", "#B64857"]
+# Each provider (model creator) gets one hue; its models are shades of it.
+# Hues are degrees on the colour wheel. Unknown providers take the fallbacks in turn.
+PROVIDER_HUES = {"Anthropic": 25, "Google": 215, "Mistral": 170, "Reflection": 275, "Z AI": 130}
+FALLBACK_HUES = [330, 60, 190, 300]
+# Pastel: moderate saturation. Lightness runs from the weakest model (light) to the
+# best model (dark); the floor keeps the darkest label legible on the background.
+PASTEL_SATURATION = 0.5
+LIGHTEST = 0.72
+DARKEST = 0.42
+
+
+def family_colors(comparison, keys, best_score):
+    """Colour per (provider_id, family): one hue per provider, darker shades for higher Int."""
+    provider_names = {row["provider_id"]: row["provider"] for row in comparison["rows"]}
+    fallback = iter(FALLBACK_HUES)
+    hue = {}
+    for provider_id in sorted(provider_names, key=lambda pid: provider_names[pid]):
+        name = provider_names[provider_id]
+        hue[provider_id] = PROVIDER_HUES[name] if name in PROVIDER_HUES else next(fallback)
+    colors = {}
+    for provider_id in {provider_id for provider_id, _ in keys}:
+        families = sorted(
+            (key for key in keys if key[0] == provider_id),
+            key=lambda key: (-best_score[key], key[1]),
+        )
+        for rank, key in enumerate(families):
+            fraction = rank / (len(families) - 1) if len(families) > 1 else 0.5
+            lightness = DARKEST + (LIGHTEST - DARKEST) * fraction
+            colors[key] = colorsys.hls_to_rgb(hue[provider_id] / 360, lightness, PASTEL_SATURATION)
+    return colors
+
+
 MARKERS = ["o", "s", "^", "D", "v", "P", "X", "<", ">", "h", "*"]
 PARETO_COLOR = "#4A4A4A"
 PARETO_DASHES = (7, 3.5)
@@ -194,6 +226,14 @@ def build_figure(
     providers = sorted({r["provider"] for rows in groups.values() for r in rows})
     marker_map = {p: MARKERS[i % len(MARKERS)] for i, p in enumerate(providers)}
     keys = sorted(set(groups) | set(capability_only))
+    best_score = {
+        key: max(
+            row["score"]
+            for row in [*groups.get(key, []), *(entry[0] for entry in capability_only.get(key, []))]
+        )
+        for key in keys
+    }
+    colors = family_colors(comparison, keys, best_score)
     # The frontier follows the measured points only. A row without a cost states
     # nothing about cost, so it can neither dominate nor be dominated.
     frontier = pareto_frontier([r for rows in groups.values() for r in rows], "x")
@@ -212,16 +252,12 @@ def build_figure(
         ax.set_xscale("linear" if linear_x else "log")
         requests, handles, coordinates, data_segments = [], [], [], []
         efforts, flat_labels, flat_rows, inferred_rows = [], [], [], []
-        for i, (provider_id, family) in enumerate(keys):
+        for provider_id, family in keys:
             rows = sorted(
                 groups.get((provider_id, family), []),
                 key=lambda r: (_rank(r), effort_order(r["effort"]), r["id"]),
             )
-            color = (
-                COLORS[i % len(COLORS)]
-                if len(keys) <= len(COLORS)
-                else plt.cm.turbo((i + 0.5) / len(keys))
-            )
+            color = colors[(provider_id, family)]
             gaps = [
                 (start, end) for start, end in zip(rows, rows[1:]) if _rank(end) - _rank(start) > 1
             ]

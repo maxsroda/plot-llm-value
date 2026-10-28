@@ -1,3 +1,4 @@
+import colorsys
 import copy
 
 import matplotlib
@@ -19,6 +20,7 @@ from plot_llm_value.plot import (
     CAPABILITY_LINE_LIMIT,
     PARETO_COLOR,
     build_figure,
+    family_colors,
     save_plot,
 )
 
@@ -392,3 +394,19 @@ def test_leader_lines_do_not_cross_text(raw_models):
         path = patch.get_path().transformed(patch.get_transform())
         assert not any(path.intersects_bbox(box) for box in boxes)
     plt.close(fig)
+
+
+def test_each_provider_has_one_hue_and_the_best_model_is_the_darkest():
+    comparison = {
+        "rows": [
+            {"provider_id": "a", "provider": "Anthropic"},
+            {"provider_id": "g", "provider": "Google"},
+        ]
+    }
+    keys = [("a", "Opus"), ("a", "Haiku"), ("g", "Argon")]
+    best_score = {("a", "Opus"): 58.0, ("a", "Haiku"): 36.0, ("g", "Argon"): 50.0}
+    colors = family_colors(comparison, keys, best_score)
+    hls = {key: colorsys.rgb_to_hls(*rgb) for key, rgb in colors.items()}
+    assert hls[("a", "Opus")][0] == pytest.approx(hls[("a", "Haiku")][0])
+    assert hls[("a", "Opus")][1] < hls[("a", "Haiku")][1]
+    assert hls[("g", "Argon")][0] != pytest.approx(hls[("a", "Opus")][0])
