@@ -98,23 +98,29 @@ footer says so, and `capability_lines_drawn` in the result is `false` while
 `capability_only` still lists every row. `--no-capability-lines` omits them at any
 count.
 
-An unpriced reasoning setting is instead drawn as a hollow point, its effort label
-suffixed `?`, and listed in `inferred_cost`. The score stays AA's measurement; only
-the cost (or time, with `--x`) is guessed. Two cases:
+An unpriced reasoning setting whose score AA measures is drawn as an estimate: a
+normal marker, joined to its family's line, with an **error bar** giving the range
+the cost could take. The error bar is the only mark of an estimate; the label carries
+no `?`. The score stays AA's measurement; only the cost (or time, with `--x`) is
+guessed. Two cases:
 
 - **Inside a dashed gap of its own family**: the cost is interpolated by effort rank,
-  in the axis's own spacing, and the point sits on the dashed segment.
+  in the axis's own spacing. The error bar spans the two measured neighbours.
 - **Directly below its family's lowest measured effort** (for example Gemini 3.8
   Flash low, when medium is measured): the cost is that effort's cost times the
-  median ratio of lowest-to-next cost across the other families in the plot. The
-  point is joined to the measured effort by a dotted line, and `inferred_cost` names
-  the effort it was estimated from and the ratio. API prices alone cannot give this,
-  because AA reports prices and total cost but not the tokens each task used.
+  median of the lowest-to-next cost ratios of the other families in the plot. The
+  error bar runs from the lowest to the highest of those ratios. An estimate needs
+  at least one other family; with one, the bar has no width and is not drawn.
 
-Treat these points as estimates, not as data: effort ranks need not be evenly spaced
-in cost, and the ratio is one assumption shared across families.
+`inferred_cost` in the JSON names the effort each estimate came from, the ratio used
+and its range. API prices alone cannot give the estimate, because AA reports prices
+and total cost but not the tokens each task used. The method, its checks and how to
+render the report are in the `llm-value` skill's `SKILL.md`.
 
-Neither hollow points nor capability lines join the Pareto frontier: a row with no
+Treat estimates as estimates, not data: effort ranks need not be evenly spaced in
+cost, and the ratio is one assumption shared across families.
+
+Neither estimates nor capability lines join the Pareto frontier: a row with no
 measured cost makes no claim about cost, so it can neither dominate nor be dominated.
 
 `data` produces structured JSON with all three indices, selected score, measured

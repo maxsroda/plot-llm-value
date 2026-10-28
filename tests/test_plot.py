@@ -16,7 +16,6 @@ from plot_llm_value.data import (
     pareto_frontier,
 )
 from plot_llm_value.plot import (
-    BACKGROUND,
     CAPABILITY_LINE_LIMIT,
     PARETO_COLOR,
     build_figure,
@@ -136,25 +135,28 @@ def test_missing_cost_becomes_a_horizontal_capability_line_off_the_frontier(raw_
     plt.close(fig)
 
 
-def test_unpriced_effort_inside_a_gap_becomes_a_hollow_interpolated_point(raw_models):
+def test_unpriced_effort_inside_a_gap_is_an_interpolated_estimate_with_an_error_bar(raw_models):
     gap_filler = copy.deepcopy(raw_models[4])
     gap_filler.update(id="id-gap", name="Beta (medium with fallback)")
     gap_filler["evaluations"]["artificial_analysis_intelligence_index"] = 44
     gap_filler["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = None
     fig, info = build_figure(comparison(raw_models + [gap_filler]))
     ax = fig.axes[0]
-    (hollow,) = [c for c in ax.collections if c.get_gid() == "inferred:anthropic:Beta"]
+    (estimate,) = [c for c in ax.collections if c.get_gid() == "estimated:anthropic:Beta"]
     # Rank 3 of the low(2) -> max(6) gap: a quarter of the way in log cost.
-    (point,) = hollow.get_offsets().tolist()
+    (point,) = estimate.get_offsets().tolist()
     assert point == pytest.approx([0.8 * (3.0 / 0.8) ** 0.25, 44])
-    assert hollow.get_facecolor().tolist() == [list(matplotlib.colors.to_rgba(BACKGROUND))]
-    assert "medium with fallback?" in [text.get_text() for text in ax.texts]
+    # The error bar spans the two measured neighbours the estimate sits between.
+    (bars,) = [c for c in ax.collections if c.get_gid() == "range:anthropic:Beta"]
+    assert bars.get_segments()[0][:, 0].tolist() == pytest.approx([0.8, 3.0])
+    assert "medium with fallback" in [text.get_text() for text in ax.texts]
     assert info["inferred_cost"] == [
         {
             "id": "id-gap",
             "name": "Beta (medium with fallback)",
             "score": 44,
             "inferred_cost_usd": pytest.approx(0.8 * (3.0 / 0.8) ** 0.25),
+            "cost_range_usd": pytest.approx([0.8, 3.0]),
             "interpolated_between": ["Beta (low with fallback)", "Beta (max with fallback)"],
         }
     ]
@@ -423,21 +425,35 @@ def test_lowest_unpriced_effort_is_estimated_from_other_families_low_to_next_rat
     low["model_creator"] = {"id": "delta", "name": "Delta"}
     low["evaluations"]["artificial_analysis_intelligence_index"] = 30
     low["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = None
-    fig, info = build_figure(comparison(raw_models + [medium, low]))
+    # Two other families give low/medium ratios of 0.5 (Alpha) and 0.4 (Epsilon).
+    eps_medium = copy.deepcopy(raw_models[2])
+    eps_medium.update(id="id-eps-medium", name="Epsilon (medium)")
+    eps_medium["model_creator"] = {"id": "epsilon", "name": "Epsilon"}
+    eps_low = copy.deepcopy(raw_models[1])
+    eps_low.update(id="id-eps-low", name="Epsilon (low)")
+    eps_low["model_creator"] = {"id": "epsilon", "name": "Epsilon"}
+    eps_low["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = 0.4
+    eps_medium["artificial_analysis_intelligence_index_cost"]["cost_per_task"]["total_cost"] = 1.0
+    fig, info = build_figure(comparison(raw_models + [medium, low, eps_medium, eps_low]))
     ax = fig.axes[0]
-    # Alpha's low/medium cost ratio is 0.5 and is the only other family's pair, so the
-    # estimate is Delta's medium cost (2.0) times 0.5.
-    (hollow,) = [c for c in ax.collections if c.get_gid() == "inferred:delta:Delta"]
-    assert hollow.get_offsets().tolist() == [pytest.approx([1.0, 30])]
+    # Median of 0.5 and 0.4 is 0.45, so the estimate is Delta's medium cost (2.0) times 0.45;
+    # the error bar runs from 0.4 to 0.5 times 2.0.
+    (estimate,) = [c for c in ax.collections if c.get_gid() == "estimated:delta:Delta"]
+    assert estimate.get_offsets().tolist() == [pytest.approx([0.9, 30])]
+    (bars,) = [c for c in ax.collections if c.get_gid() == "range:delta:Delta"]
+    assert bars.get_segments()[0][:, 0].tolist() == pytest.approx([0.8, 1.0])
     assert [line for line in ax.lines if line.get_gid() == "capability:id-delta-low"] == []
-    assert [line for line in ax.lines if line.get_gid() == "estimate:delta:Delta"]
+    (connector,) = [line for line in ax.lines if line.get_gid() == "estimate:delta:Delta"]
+    assert connector.get_linestyle() == "-"
     assert info["inferred_cost"] == [
         {
             "id": "id-delta-low",
             "name": "Delta (low)",
             "score": 30,
-            "inferred_cost_usd": pytest.approx(1.0),
+            "inferred_cost_usd": pytest.approx(0.9),
+            "cost_range_usd": pytest.approx([0.8, 1.0]),
             "estimated_from": "Delta (medium)",
-            "cost_ratio_low_to_next": pytest.approx(0.5),
+            "cost_ratio_low_to_next": pytest.approx(0.45),
+            "cost_ratio_range": pytest.approx([0.4, 0.5]),
         }
     ]

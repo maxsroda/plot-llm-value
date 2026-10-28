@@ -55,14 +55,15 @@ COMMANDS
       hide the priced points, so none are drawn, the footer says so, and the JSON
       still lists every row (capability_lines_drawn reports which happened).
       --no-capability-lines omits them regardless. An unpriced effort whose rank falls
-      inside a dashed effort gap of its own family instead becomes a hollow point
-      on that segment: its score is measured, its cost interpolated by effort rank
-      between the two measured neighbours, reported in inferred_cost with its
-      effort label suffixed '?'. An unpriced effort directly below the family's
-      lowest measured effort becomes a hollow point joined by a dotted line: its
-      cost is that effort's cost times the median low-to-next cost ratio of the
-      other families plotted, reported in inferred_cost with estimated_from and
-      cost_ratio_low_to_next. report omits capability lines altogether. With --x, read 'cost' above as the chosen time:
+      inside a dashed effort gap of its own family instead becomes an estimate: its
+      score is measured, its cost interpolated by effort rank between the two
+      measured neighbours. An unpriced effort directly below the family's lowest
+      measured effort is an estimate too: its cost is that effort's cost times the
+      median low-to-next cost ratio of the other families plotted. Estimates are drawn
+      as normal points with an error bar giving the range, reported in inferred_cost
+      with cost_range_usd and, below the lowest effort, estimated_from and
+      cost_ratio_low_to_next. report omits capability lines altogether.
+      With --x, read 'cost' above as the chosen time:
       the reason reads 'time unavailable' and the guess is reported as
       inferred_<row field>, e.g. inferred_e2e_seconds. Neither kind joins the frontier, which needs
       measured costs; a measured zero cost is never treated as a guess.
@@ -151,7 +152,7 @@ OPTIONS
                              drawn by default. JSON Pareto fields are unaffected.
   --no-capability-lines      Plot only; never draw horizontal capability lines
                              for scored rows without a plottable cost. They stay
-                             in capability_only. Hollow gap points are unaffected.
+                             in capability_only. Estimates with error bars are unaffected.
   --output PATH              Plot only; .png, .svg or .pdf. Parent must exist.
   --timeout SECONDS          Positive per-request timeout (default 30).
   --env-file PATH            Read API key from this dotenv file explicitly.

@@ -186,13 +186,15 @@ def _rung_ratios(groups):
     return ratios
 
 
-def _estimated_cost(row, rows, gaps, rung_ratio, *, linear_x):
-    """Cost guessed for an unpriced effort; the score stays AA's own measurement.
+def _estimated_cost(row, rows, gaps, rung, *, linear_x):
+    """Cost guessed for an unpriced effort, with the range it could plausibly take.
 
-    Inside a dashed gap of its family, the cost is placed at the effort's rank's
-    share of the gap. Directly below the family's lowest measured effort, it is that
-    effort's cost times rung_ratio, the median low-to-next cost ratio of the other
-    families. Returns (cost, detail), or None when neither applies.
+    The score stays AA's own measurement. Inside a dashed gap of its family, the cost
+    is placed at the effort's rank's share of the gap, and the range is the gap's two
+    measured neighbours. Directly below the family's lowest measured effort, the cost
+    is that effort's cost times the median low-to-next ratio of the other families
+    (rung = (median, lowest, highest) of those ratios), and the range runs from the
+    lowest to the highest ratio. Returns (cost, detail, (low, high)), or None.
     """
     rank = _rank(row)
     for start, end in gaps:
@@ -204,10 +206,17 @@ def _estimated_cost(row, rows, gaps, rung_ratio, *, linear_x):
                 cost = a + fraction * (b - a)
             else:
                 cost = math.exp(math.log(a) + fraction * math.log(b / a))
-            return cost, {"interpolated_between": [start["name"], end["name"]]}
-    if rung_ratio is not None and rows and _rank(rows[0]) - rank == 1:
-        detail = {"estimated_from": rows[0]["name"], "cost_ratio_low_to_next": rung_ratio}
-        return rows[0]["x"] * rung_ratio, detail
+            detail = {"interpolated_between": [start["name"], end["name"]]}
+            return cost, detail, (min(a, b), max(a, b))
+    if rung is not None and rows and _rank(rows[0]) - rank == 1:
+        median, lowest, highest = rung
+        detail = {
+            "estimated_from": rows[0]["name"],
+            "cost_ratio_low_to_next": median,
+            "cost_ratio_range": [lowest, highest],
+        }
+        base = rows[0]["x"]
+        return base * median, detail, (base * lowest, base * highest)
     return None
 
 
@@ -219,6 +228,7 @@ def build_figure(
     unavailable = f"{noun} unavailable"
     # inferred_cost_usd predates the other axes; keep its name for existing callers.
     inferred_key = "inferred_cost_usd" if axis["key"] == "cost" else "inferred_" + axis["row_key"]
+    range_key = "cost_range_usd" if axis["key"] == "cost" else "range_" + axis["row_key"]
     groups, capability_only, excluded = defaultdict(list), defaultdict(list), []
     for row in comparison["rows"]:
         key = (row["provider_id"], row["family"])
@@ -273,7 +283,7 @@ def build_figure(
         efforts, flat_labels, flat_rows, inferred_rows = [], [], [], []
         for provider_id, family in keys:
             others = [ratio for key, ratio in rung_ratios.items() if key != (provider_id, family)]
-            rung_ratio = statistics.median(others) if others else None
+            rung = (statistics.median(others), min(others), max(others)) if others else None
             rows = sorted(
                 groups.get((provider_id, family), []),
                 key=lambda r: (_rank(r), effort_order(r["effort"]), r["id"]),
@@ -296,7 +306,7 @@ def build_figure(
                 # directly below its lowest measured effort; a measured zero cost is
                 # not a guess, so it keeps its capability line.
                 guess = (
-                    _estimated_cost(row, rows, gaps, rung_ratio, linear_x=linear_x)
+                    _estimated_cost(row, rows, gaps, rung, linear_x=linear_x)
                     if reason == unavailable
                     else None
                 )
@@ -319,8 +329,8 @@ def build_figure(
                         }
                     )
                 else:
-                    cost, detail = guess
-                    inferred.append((row, cost))
+                    cost, detail, cost_range = guess
+                    inferred.append((row, cost, cost_range))
                     if "estimated_from" in detail:
                         estimate_segments.append(
                             ((cost, row["score"]), (rows[0]["x"], rows[0]["score"]))
@@ -331,6 +341,7 @@ def build_figure(
                             "name": row["name"],
                             "score": row["score"],
                             inferred_key: cost,
+                            range_key: list(cost_range),
                             **detail,
                         }
                     )
@@ -375,30 +386,45 @@ def build_figure(
                 if row["effort"]:
                     efforts.append((row["effort"].partition(" with ")[0], [point], color, False))
             if inferred:
-                guessed_xy = [(cost, row["score"]) for row, cost in inferred]
-                hollow = ax.scatter(
+                # An estimate is drawn like a measured point; its error bar, not its
+                # shape, says it is an estimate.
+                guessed_xy = [(cost, row["score"]) for row, cost, _ in inferred]
+                estimated = ax.scatter(
                     *zip(*guessed_xy),
-                    s=60,
+                    s=65,
                     marker=marker,
-                    facecolor=BACKGROUND,
-                    edgecolor=color,
-                    linewidth=1.6,
+                    color=color,
+                    edgecolor=BACKGROUND,
+                    linewidth=1.2,
                     zorder=3,
                 )
-                hollow.set_gid(f"inferred:{provider_id}:{family}")
+                estimated.set_gid(f"estimated:{provider_id}:{family}")
+                ranges = [(low, high, row["score"]) for row, _, (low, high) in inferred]
+                wide = [(low, high, y) for low, high, y in ranges if high > low]
+                if wide:
+                    bars = ax.hlines(
+                        [y for _, _, y in wide],
+                        [low for low, _, _ in wide],
+                        [high for _, high, _ in wide],
+                        color=color,
+                        lw=1.3,
+                        zorder=2.9,
+                    )
+                    bars.set_gid(f"range:{provider_id}:{family}")
                 coordinates.extend(guessed_xy)
-                for (row, _), point in zip(inferred, guessed_xy):
-                    efforts.append((f"{row['effort']}?", [point], color, False))
+                for low, high, y in ranges:
+                    coordinates.extend([(low, y), (high, y)])
+                for (row, _, _), point in zip(inferred, guessed_xy):
+                    efforts.append((row["effort"], [point], color, False))
             for a, b in estimate_segments:
-                # Dotted, unlike the dashed effort gaps: the cost here is estimated from
-                # other models, not interpolated within this family.
+                # Solid, like measured segments: the error bar already marks the estimate.
                 (line,) = ax.plot(
                     [a[0], b[0]],
                     [a[1], b[1]],
                     color=color,
-                    lw=1.6,
-                    alpha=0.7,
-                    linestyle=":",
+                    lw=2,
+                    alpha=0.75,
+                    linestyle="-",
                     zorder=2,
                 )
                 line.set_gid(f"estimate:{provider_id}:{family}")
@@ -480,11 +506,10 @@ def build_figure(
                     [],
                     [],
                     color="#555555",
-                    markerfacecolor=BACKGROUND,
-                    markeredgecolor="#555555",
-                    marker="o",
-                    lw=0,
-                    label=f"Hollow: {noun} estimated, not measured",
+                    marker="|",
+                    markersize=9,
+                    lw=1.3,
+                    label=f"Error bar: {noun} estimated, range from other models",
                 )
             )
         if len(frontier_xy) > 1:
@@ -535,9 +560,9 @@ def build_figure(
             )
         if inferred_rows:
             notes.append(
-                f"{len(inferred_rows)} unmeasured effort(s) drawn hollow: score measured, {noun} "
-                "estimated by effort rank in a gap (dashed) or from other models' lowest-effort "
-                "ratio (dotted), kept off the frontier"
+                f"{len(inferred_rows)} unmeasured effort(s) drawn with an error bar: score measured, "
+                f"{noun} estimated by effort rank in a gap, or from other models' lowest-effort "
+                "ratio; the bar is the range, kept off the frontier"
             )
         if len(frontier_xy) > 1:
             notes.append(
