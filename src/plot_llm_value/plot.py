@@ -400,17 +400,28 @@ def build_figure(
                 )
                 estimated.set_gid(f"estimated:{provider_id}:{family}")
                 ranges = [(low, high, row["score"]) for row, _, (low, high) in inferred]
-                wide = [(low, high, y) for low, high, y in ranges if high > low]
+                wide = [
+                    (cost, low, high, row["score"])
+                    for row, cost, (low, high) in inferred
+                    if high > low
+                ]
                 if wide:
-                    bars = ax.hlines(
-                        [y for _, _, y in wide],
-                        [low for low, _, _ in wide],
-                        [high for _, high, _ in wide],
-                        color=color,
-                        lw=1.3,
+                    # Caps at both ends make the bar read as a range, not a line.
+                    _, _, bars = ax.errorbar(
+                        [cost for cost, _, _, _ in wide],
+                        [y for _, _, _, y in wide],
+                        xerr=[
+                            [cost - low for cost, low, _, _ in wide],
+                            [high - cost for cost, _, high, _ in wide],
+                        ],
+                        fmt="none",
+                        ecolor=color,
+                        elinewidth=1.3,
+                        capsize=4,
+                        capthick=1.3,
                         zorder=2.9,
                     )
-                    bars.set_gid(f"range:{provider_id}:{family}")
+                    bars[0].set_gid(f"range:{provider_id}:{family}")
                 coordinates.extend(guessed_xy)
                 for low, high, y in ranges:
                     coordinates.extend([(low, y), (high, y)])
